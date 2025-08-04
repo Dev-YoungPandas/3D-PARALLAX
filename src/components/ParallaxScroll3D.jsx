@@ -2,15 +2,148 @@
 
 import React, { useRef, useMemo, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Text, useScroll, ScrollControls, useGLTF } from '@react-three/drei';
+import { Text, useScroll, ScrollControls, useGLTF, Html, useProgress } from '@react-three/drei';
 
-// Simple 3D object component with delayed parallax
-function ScrollingObject({ position, rotationSpeed = 1, scale = 1, color = "#ff6b6b" }) {
+// ==================== LOADER COMPONENT ====================
+function Loader() {
+  const { progress, loaded, total } = useProgress();
+  
+  return (
+    <Html center>
+      <div className="flex flex-col items-center justify-center p-8 bg-white bg-opacity-90 rounded-xl shadow-lg backdrop-blur-sm">
+        {/* 3D Spinning Loader */}
+        <div className="relative w-24 h-24 mb-6">
+          {/* Outer ring */}
+          <div className="absolute inset-0 border-4 border-blue-100 rounded-full"></div>
+          
+          {/* Middle spinning ring */}
+          <div 
+            className="absolute inset-0 border-4 border-transparent border-t-blue-500 border-r-blue-400 rounded-full"
+            style={{ 
+              animation: 'spin 1s linear infinite'
+            }}
+          ></div>
+          
+          {/* Inner spinning ring */}
+          <div 
+            className="absolute inset-3 border-3 border-transparent border-t-purple-500 border-l-purple-400 rounded-full"
+            style={{ 
+              animation: 'spin 1.5s linear infinite reverse'
+            }}
+          ></div>
+          
+          {/* Center dot */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div 
+              className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+              style={{ animation: 'pulse 2s infinite' }}
+            ></div>
+          </div>
+        </div>
+        
+        {/* Progress Bar */}
+        <div className="w-80 mb-4">
+          <div className="flex justify-between text-sm text-gray-700 mb-2 font-medium">
+            <span>Loading 3D Models...</span>
+            <span>{Math.round(progress)}%</span>
+          </div>
+          
+          <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden shadow-inner">
+            <div 
+              className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 ease-out relative"
+              style={{ width: `${progress}%` }}
+            >
+              {/* Shimmer effect */}
+              <div 
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30"
+                style={{ animation: 'shimmer 2s infinite' }}
+              ></div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Loading Stats */}
+        <div className="text-center">
+          <p className="text-lg font-bold text-gray-800 mb-1">
+            {progress < 100 ? 'Loading Models...' : 'Almost Ready!'}
+          </p>
+          <p className="text-sm text-gray-500 mb-3">
+            {loaded} of {total} assets loaded
+          </p>
+          
+          {/* Loading dots animation */}
+          <div className="flex justify-center space-x-1">
+            <div 
+              className="w-2 h-2 bg-blue-500 rounded-full"
+              style={{ animation: 'bounce 1.4s infinite' }}
+            ></div>
+            <div 
+              className="w-2 h-2 bg-purple-500 rounded-full"
+              style={{ animation: 'bounce 1.4s infinite 0.2s' }}
+            ></div>
+            <div 
+              className="w-2 h-2 bg-pink-500 rounded-full"
+              style={{ animation: 'bounce 1.4s infinite 0.4s' }}
+            ></div>
+          </div>
+        </div>
+      </div>
+      
+      {/* CSS Animations */}
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(1.1); }
+        }
+        
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        
+        @keyframes bounce {
+          0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+          40% { transform: translateY(-10px); }
+          60% { transform: translateY(-5px); }
+        }
+      `}</style>
+    </Html>
+  );
+}
+
+// ==================== OPTIMIZED GLTF MODEL COMPONENT ====================
+function GLTFModel({ url, position, rotationSpeed = 1, scale = 1 }) {
   const meshRef = useRef();
   const scroll = useScroll();
+  
+  // Load GLTF model with optimization
+  const { scene, error } = useGLTF(url);
+
+  // Clone scene only once for performance
+  const clonedScene = useMemo(() => {
+    if (scene) {
+      const cloned = scene.clone();
+      cloned.traverse((child) => {
+        if (child.isMesh) {
+          child.frustumCulled = true;
+          if (child.material) {
+            child.material.transparent = true;
+            child.material.opacity = 0;
+          }
+        }
+      });
+      return cloned;
+    }
+    return null;
+  }, [scene]);
 
   useFrame((state) => {
-    if (meshRef.current && scroll) {
+    if (meshRef.current && scroll && clonedScene) {
       const currentScrollProgress = scroll.offset;
       
       // Rotation based on scroll progress
@@ -19,8 +152,7 @@ function ScrollingObject({ position, rotationSpeed = 1, scale = 1, color = "#ff6
       meshRef.current.rotation.y = rotationAmount * 0.8;
       meshRef.current.rotation.z = rotationAmount * 0.3;
       
-      // Delayed parallax movement for 3D models
-      // Models start moving after 15% scroll progress and have slower movement
+      // Delayed parallax movement
       const delayedProgress = Math.max(0, (currentScrollProgress - 0.15) * 1.2);
       const parallaxOffset = delayedProgress * 25;
       meshRef.current.position.y = position[1] - 8 + parallaxOffset;
@@ -32,62 +164,16 @@ function ScrollingObject({ position, rotationSpeed = 1, scale = 1, color = "#ff6
       meshRef.current.scale.setScalar(scale * scaleMultiplier);
       
       // Opacity effect - fade in as they start moving
-      if (meshRef.current.material) {
-        meshRef.current.material.opacity = Math.min(1, delayedProgress * 3);
-        meshRef.current.material.transparent = true;
-      }
-    }
-  });
-
-  return (
-    <mesh ref={meshRef} position={[position[0], position[1] - 8, position[2]]}>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color={color} transparent />
-    </mesh>
-  );
-}
-
-// GLTF Model component with delayed parallax
-function GLTFModel({ url, position, rotationSpeed = 1, scale = 1 }) {
-  const meshRef = useRef();
-  const scroll = useScroll();
-  
-  // Load GLTF model using useGLTF hook
-  const { scene, error } = useGLTF(url);
-
-  useFrame((state) => {
-    if (meshRef.current && scroll) {
-      const currentScrollProgress = scroll.offset;
-      
-      // Rotation based on scroll progress
-      const rotationAmount = currentScrollProgress * Math.PI * 2 * rotationSpeed;
-      meshRef.current.rotation.x = rotationAmount * 0.5;
-      meshRef.current.rotation.y = rotationAmount * 0.8;
-      meshRef.current.rotation.z = rotationAmount * 0.3;
-      
-      // Delayed parallax movement for GLTF models
-      // Models start moving after 15% scroll progress and have slower movement
-      const delayedProgress = Math.max(0, (currentScrollProgress - 0.15) * 1.2);
-      const parallaxOffset = delayedProgress * 25;
-      meshRef.current.position.y = position[1] - 8 + parallaxOffset;
-      meshRef.current.position.x = position[0];
-      meshRef.current.position.z = position[2];
-      
-      // Scale effect during scroll
-      const scaleMultiplier = 1 + delayedProgress * 0.2;
-      meshRef.current.scale.setScalar(scale * scaleMultiplier);
-      
-      // Traverse through the model and set opacity for fade effect
+      const targetOpacity = Math.min(1, delayedProgress * 3);
       meshRef.current.traverse((child) => {
         if (child.isMesh && child.material) {
-          child.material.transparent = true;
-          child.material.opacity = Math.min(1, delayedProgress * 3);
+          child.material.opacity = targetOpacity;
         }
       });
     }
   });
 
-  // If there's an error loading the model, show a placeholder with same delayed effect
+  // Error fallback
   if (error) {
     return (
       <mesh ref={meshRef} position={[position[0], position[1] - 8, position[2]]}>
@@ -97,17 +183,19 @@ function GLTFModel({ url, position, rotationSpeed = 1, scale = 1 }) {
     );
   }
 
+  if (!clonedScene) return null;
+
   return (
     <primitive 
       ref={meshRef} 
-      object={scene.clone()} 
+      object={clonedScene} 
       position={[position[0], position[1] - 8, position[2]]} 
       scale={[scale, scale, scale]} 
     />
   );
 }
 
-// Text component with early parallax (starts moving immediately)
+// ==================== SCROLLING TEXT COMPONENT ====================
 function ScrollingText() {
   const textRef = useRef();
   const scroll = useScroll();
@@ -116,28 +204,14 @@ function ScrollingText() {
     if (textRef.current && scroll) {
       const currentScrollProgress = scroll.offset;
       
-      // Text starts moving immediately and moves faster
-      // Early parallax movement for text
-      const earlyProgress = currentScrollProgress * 1.3;
-      const textParallaxOffset = earlyProgress * 23;
-      textRef.current.position.y = -10 + textParallaxOffset;
-      textRef.current.position.z = -1; // Keep text in front of models
+      const textParallaxSpeed = 0.6;
+      const textParallaxOffset = currentScrollProgress * textParallaxSpeed * 24;
       
-      // Scale effect for text
-      const scaleEffect = 1 + earlyProgress * 0.15;
+      textRef.current.position.y = -2 + textParallaxOffset;
+      textRef.current.position.z = -1;
+      
+      const scaleEffect = 1 + currentScrollProgress * 0.1;
       textRef.current.scale.setScalar(scaleEffect);
-      
-      // Fade out text as it reaches top (after 70% scroll)
-      const fadeOutProgress = Math.max(0, currentScrollProgress - 0.7);
-      const opacity = Math.max(0.2, 1 - (fadeOutProgress * 3));
-      
-      // Apply opacity to all text children
-      textRef.current.children.forEach(child => {
-        if (child.material) {
-          child.material.opacity = opacity;
-          child.material.transparent = true;
-        }
-      });
     }
   });
 
@@ -191,23 +265,8 @@ function ScrollingText() {
   );
 }
 
-// Scene with models and synchronized text
+// ==================== SCENE COMPONENT WITH LOADER ====================
 function Scene() {
-  const objects = useMemo(() => [
-    { position: [-4, 3, 0], rotationSpeed: 1.2, scale: 1.2, color: "#E8B4F0" },
-    { position: [2, -4.9, 0], rotationSpeed: 0.8, scale: 1.4, color: "#FF6B6B" },
-    { position: [4.5, 0, 0], rotationSpeed: 1.5, scale: 1.8, color: "#4A90E2" },
-    { position: [8, 3, 0], rotationSpeed: 0.9, scale: 1.2, color: "#F0F0F0" },
-    { position: [8.6, -1, 0], rotationSpeed: 1.1, scale: 1.3, color: "#FFD93D" },
-    { position: [-2, 0, 0], rotationSpeed: 1.3, scale: 1.4, color: "#E8B4F0" },
-    { position: [-7, 0, 0], rotationSpeed: 0.7, scale: 1.4, color: "#FF6B6B" },
-    { position: [-9, 4, 0], rotationSpeed: 1.4, scale: 1.2, color: "#E8B4F0" },
-    { position: [3, 3.8, 0], rotationSpeed: 1.0, scale: 1.2, color: "#C8860D" },
-    { position: [-6, -4, 0], rotationSpeed: 1.6, scale: 1.4, color: "#F0F0D0" },
-    { position: [9, -5, 0], rotationSpeed: 0.6, scale: 1.2, color: "#4A90E2" }
-  ], []);
-
-  // Your GLTF models with delayed parallax
   const gltfModels = useMemo(() => [
     { url: "/medias/S-a.glb", position: [-2, 3, 0], rotationSpeed: 1.2, scale: 1.2 },
     { url: "/medias/S-b.glb", position: [1, -2.9, 0], rotationSpeed: 0.8, scale: 1.4 },
@@ -223,7 +282,7 @@ function Scene() {
   ], []);
 
   return (
-    <>
+    <Suspense fallback={<Loader />}>
       {/* Enhanced lighting for better visibility */}
       <ambientLight intensity={1.2} />
       <directionalLight position={[10, 10, 5]} intensity={1.5} />
@@ -231,44 +290,24 @@ function Scene() {
       <pointLight position={[0, 5, 5]} intensity={0.8} color="#ffffff" />
       <spotLight position={[0, 10, 0]} intensity={0.5} angle={0.3} penumbra={1} />
       
-      {/* 3D Text with early parallax (moves first) */}
+      {/* 3D Text with parallax effect */}
       <ScrollingText />
       
-      {/* Simple 3D Objects with delayed parallax (comment out when GLTF models are working) */}
-      {/*
-      {objects.map((obj, index) => (
-        <ScrollingObject
-          key={index}
-          position={obj.position}
-          rotationSpeed={obj.rotationSpeed}
-          scale={obj.scale}
-          color={obj.color}
+      {/* GLTF Models */}
+      {gltfModels.map((model, index) => (
+        <GLTFModel
+          key={`gltf-${index}`}
+          url={model.url}
+          position={model.position}
+          rotationSpeed={model.rotationSpeed}
+          scale={model.scale}
         />
       ))}
-      */}
-      
-      {/* GLTF Models with delayed parallax */}
-      {gltfModels.map((model, index) => (
-        <Suspense key={`gltf-${index}`} fallback={
-          <mesh position={[model.position[0], model.position[1] - 8, model.position[2]]}>
-            <boxGeometry args={[1, 1, 1]} />
-            <meshStandardMaterial color="#cccccc" transparent opacity={0.3} />
-          </mesh>
-        }>
-          <GLTFModel
-            url={model.url}
-            position={model.position}
-            rotationSpeed={model.rotationSpeed}
-            scale={model.scale}
-          />
-        </Suspense>
-      ))}
-      
-    </>
+    </Suspense>
   );
 }
 
-// Main component - only Three.js ScrollControls
+// ==================== MAIN COMPONENT ====================
 export default function ParallaxScroll3D() {
   return (
     <div className="relative">
@@ -285,8 +324,28 @@ export default function ParallaxScroll3D() {
             <Scene />
           </ScrollControls>
         </Canvas>
-
       </div>
     </div>
   );
 }
+
+// ==================== PRELOAD MODELS FOR FASTER LOADING ====================
+// All model paths ko preload karte hain
+const modelPaths = [
+  "/medias/S-a.glb",
+  "/medias/S-b.glb", 
+  "/medias/S-c.glb",
+  "/medias/S-d.glb",
+  "/medias/S-e.glb",
+  "/medias/S-f.glb",
+  "/medias/S-g.glb",
+  "/medias/S-h_001.glb",
+  "/medias/S-h_002.glb",
+  "/medias/S-h.glb",
+  "/medias/S-h_003.glb"
+];
+
+// Preload all models for faster loading
+modelPaths.forEach(path => {
+  useGLTF.preload(path);
+});

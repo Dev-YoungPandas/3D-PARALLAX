@@ -3,7 +3,6 @@
 import React, { useRef, useMemo, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Text, useScroll, ScrollControls, useGLTF } from '@react-three/drei';
-import * as THREE from 'three';
 
 // Simple 3D object component (replace this with your GLTF loader later)
 function ScrollingObject({ position, rotationSpeed = 1, scale = 1, color = "#ff6b6b" }) {

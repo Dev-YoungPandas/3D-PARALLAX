@@ -1,4 +1,4 @@
-import ParallaxScroll3D from "@/components/ParallaxScroll3D";
+import ParallaxScroll3D from "../components/ParallaxScroll3D";
 
 
 export default function Home() {
